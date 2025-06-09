@@ -11,7 +11,7 @@ app = FastAPI()
 # CSV data folder
 DATA_DIR = "./csv_data"
 
-def get_csv_file(system_id: int) -> str:
+'''def get_csv_file(system_id: int) -> str:
     if system_id == 1:
         return os.path.join(DATA_DIR, "System1_perf_output.csv")
     elif system_id == 2:
@@ -93,19 +93,13 @@ DATA:
         return JSONResponse(content=cleaned_output)
 
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        return JSONResponse(content={"error": str(e)}, status_code=500)'''
 
 @app.get("/combined_forecast/{system_id}")
 def combined_forecast(system_id: int):
     try:
-        # Step 1: Load historical CSV
-        if system_id == 1:
-            file_path = os.path.join(DATA_DIR, "array_data_converted.csv")
-        elif system_id == 2:
-            file_path = os.path.join(DATA_DIR, "array_data_converted.csv")
-        else:
-            raise ValueError("Unsupported system_id")
-
+        file_path = os.path.join(DATA_DIR, "daily_mean_usage.csv")
+        
         df = pd.read_csv(file_path)
         #df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.sort_values("timestamp")
@@ -155,44 +149,46 @@ def detailed_drift(system_id: int,
         if not start:
             start = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
 
-        df = fetch_data_from_csv(system_id, start, end)
+        file_path = os.path.join(DATA_DIR, "daily_mean_usage.csv")
+        
+        df = pd.read_csv(file_path)
 
         if df.empty:
             return JSONResponse(content={"error": "No data found"}, status_code=404)
 
-        prompt = f"""
-        You are a system performance expert.
-You are a system drift detection engine.
+        data_csv = df[["timestamp", "usage"]].head(50).to_csv(index=False)
 
-Assume a simple drift scoring method:
-- If the value changes slightly, assign a drift_score between 0.3 and 0.6
-- If the value changes significantly, assign between 0.7 and 0.95
-- Otherwise, use between 0.1 and 0.3
+        prompt = f'''
+You are a system performance expert.
+
+Given a time series of daily system usage, identify whether there is a drift.
+
+Drift is defined as an abnormal or sudden increase or decrease in usage over consecutive days.
 
 For every row, return:
 - timestamp
-- metric: "vlun_svt_read"
-- value
-- drift_score (must be a number from 0 to 1)
-- drift: "yes" if drift_score > 0.6, else "no"
+- usage
+- drift: "true" if drift is detected at that point, else "false"
 
-YOU MUST RETURN ONLY A VALID JSON ARRAY.
-
-Example:
+YOU MUST RETURN ONLY A VALID JSON ARRAY. Example:
 [
   {{
-    "timestamp": "2025-03-01T00:00:00Z",
-    "metric": "vlun_svt_read",
-    "value": 0.28,
-    "drift_score": 0.74,
-    "drift": "yes"
+    "timestamp": "2025-03-01",
+    "usage": 72.3,
+    "drift": "false"
+  }},
+  {{
+    "timestamp": "2025-03-02",
+    "usage": 84.1,
+    "drift": "true"
   }}
 ]
 
 Now process the data below:
 
-{df.head(50).to_csv(index=False)}
-"""
+{data_csv}
+'''
+
         raw_output = call_ollama(prompt)
         cleaned_output = clean_llm_output(raw_output)
         return JSONResponse(content=cleaned_output)
