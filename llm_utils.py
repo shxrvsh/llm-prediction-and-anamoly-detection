@@ -38,8 +38,21 @@ DATA:
 """
 
 def call_ollama(prompt: str) -> str:
-    response = requests.post(
-        "http://localhost:11434/api/generate",
-        json={"model": "phi3", "prompt": prompt, "stream": False}
-    )
-    return response.json()["response"]
+    api_key = "AIzaSyAxy3LkOnpgZhzHiyCuoz_ZbpciPOTDJWk"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.7
+        }
+    }
+    response = requests.post(url, headers=headers, json=data)
+    response_json = response.json()  # Parse the JSON response
+    print("Raw API Response:", json.dumps(response_json, indent=2))  # Print the raw response for inspection
+
+    try:
+        return response_json["candidates"][0]["content"]["parts"][0]["text"]
+    except KeyError as e:
+        print(f"KeyError: {e}")
+        raise  # Re-raise the exception after logging
