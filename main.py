@@ -144,19 +144,31 @@ def detailed_drift(system_id: int,
     end: str = Query(default=None)
 ):
     try:
-        if not end:
-            end = datetime.now().strftime("%Y-%m-%d")
-        if not start:
-            start = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-
         file_path = os.path.join(DATA_DIR, "daily_mean_usage.csv")
-        
         df = pd.read_csv(file_path)
+
+        # Convert timestamp to datetime
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+        # Determine date range
+        if not end:
+            end_dt = df["timestamp"].max()
+        else:
+            end_dt = pd.to_datetime(end)
+
+        if not start:
+            start_dt = end_dt - timedelta(days=30)
+        else:
+            start_dt = pd.to_datetime(start)
+
+        # Filter data within date range
+        df = df[(df["timestamp"] >= start_dt) & (df["timestamp"] <= end_dt)]
 
         if df.empty:
             return JSONResponse(content={"error": "No data found"}, status_code=404)
 
-        data_csv = df[["timestamp", "usage"]].head(50).to_csv(index=False)
+        # Take only first 50 rows after filtering
+        data_csv = df[["timestamp", "usage"]].to_csv(index=False)
 
         prompt = f'''
 You are a system performance expert.
