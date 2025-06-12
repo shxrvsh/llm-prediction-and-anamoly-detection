@@ -3,6 +3,8 @@ from fastapi.responses import JSONResponse
 from datetime import datetime, timedelta
 import pandas as pd
 import os
+import re
+import json
 
 from llm_utils import build_prompt, call_ollama, clean_llm_output
 
@@ -98,42 +100,78 @@ DATA:
 @app.get("/combined_forecast/{system_id}")
 def combined_forecast(system_id: int):
     try:
-        file_path = os.path.join(DATA_DIR, "daily_mean_usage.csv")
-        
-        df = pd.read_csv(file_path)
-        #df["timestamp"] = pd.to_datetime(df["timestamp"])
-        df = df.sort_values("timestamp")
-        #actual_df = df[["timestamp", "used"]].tail(10).copy()
-        df["type"] = "actual"
+        if system_id != 1:
+            raise ValueError("Unsupported system_id")
 
-        # Step 2: Call LLM to get forecast
+        # Load and clean data
+        file_path = "./csv_data/daily_mean_usage.csv"
+        df = pd.read_csv(file_path, names=["timestamp", "usage"], header=0)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], format="%Y-%m-%d", errors='coerce')
+        df = df.dropna(subset=["timestamp", "usage"]).sort_values("timestamp")
+
+        if df.empty:
+            return JSONResponse(content={"error": "No usable data found"}, status_code=404)
+
+        # Prepare actual data (last 200)
+        last_actual = df.tail(200).copy()
+        last_actual["type"] = "actual"
+        last_actual["timestamp"] = last_actual["timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        actual_list = last_actual[["timestamp", "usage", "type"]].to_dict(orient="records")
+
+        # Use full history for forecast
+        usage_values = df["usage"].round(2).tolist()
+        last_ts = df["timestamp"].max()
+
+        # Infer timestamp frequency
+        inferred_freq = pd.infer_freq(df["timestamp"])
+        if inferred_freq is None:
+            inferred_freq = "D"  # fallback to daily
+
+        forecast_timestamps = pd.date_range(start=last_ts, periods=31, freq=inferred_freq)[1:]
+        forecast_ts_strings = [ts.strftime("%Y-%m-%dT%H:%M:%SZ") for ts in forecast_timestamps]
+
+        # Prompt for LLM
         prompt = f"""
 You are a forecasting assistant.
-Given the following system usage data, forecast the next 3 time stamps from the last timestamp of the given data.
-do not return null for all 3 forecasted usage values, return a number.
-Return a JSON array of the form:
-[
-  {{"timestamp": "2020-12-06", "usage": 49.03}},
-  ...
-]
-Only return the JSON array.
 
-DATA:
-{df.tail(100).to_csv(index=False)}
+Below is a list of historical system usage values.
+Forecast the next 30 `usage` values and return them in this exact format:
+
+[100.1, 101.3, 99.8, 100.5, ...]
+
+Do not include any explanation or extra text. Return ONLY a valid JSON array of 30 floats.
+
+Historical data:
+{usage_values}
 """
-        x=call_ollama(prompt)
-        print(x)
-        forecast_json = clean_llm_output(x)
-        forecast_df = pd.DataFrame(forecast_json)
-        forecast_df["type"] = "forecast"
 
-        # Step 3: Combine & format
-        combined_df = pd.concat([df.tail(100), forecast_df], ignore_index=True)
-        #combined_df["timestamp"] = combined_df["timestamp"].dt.strftime("%Y-%m-%d")
+        raw_output = call_ollama(prompt)
 
-        
+        # Extract JSON array
+        match = re.search(r"\[\s*[\d.,\s]+\s*\]", raw_output)
+        if not match:
+            return JSONResponse(content={
+                "error": "LLM output was not a valid number array",
+                "raw": raw_output
+            }, status_code=500)
 
-        return JSONResponse(content=combined_df.to_json(orient="records"))
+        forecast_values = json.loads(match.group(0))
+        if len(forecast_values) != 30:
+            return JSONResponse(content={
+                "error": "Forecast did not return 30 values",
+                "raw": forecast_values
+            }, status_code=500)
+
+        # Assemble forecast DataFrame
+        forecast_df = pd.DataFrame({
+            "timestamp": forecast_ts_strings,
+            "usage": forecast_values,
+            "type": "forecast"
+        })
+
+        # Combine actual + forecast
+        combined_df = pd.concat([pd.DataFrame(actual_list), forecast_df], ignore_index=True)
+        return JSONResponse(content=combined_df.to_dict(orient="records"))
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
