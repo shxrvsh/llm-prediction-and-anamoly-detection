@@ -85,7 +85,7 @@ Only JSON. No explanation.
         user.initiate_chat(forecast_agent, message=prompt, max_turns=1)
         reply = forecast_agent.last_message()["content"]
 
-        # Try parsing LLM output
+        
         forecast_data = json.loads(reply)
         return JSONResponse(content=forecast_data)
 
