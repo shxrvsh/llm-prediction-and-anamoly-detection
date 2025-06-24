@@ -1,6 +1,7 @@
 import pandas as pd
 import requests
-
+from dotenv import load_dotenv
+import os
 import re
 import json
 
@@ -36,9 +37,12 @@ Only return JSON. No explanation.
 DATA:
 {csv_data}
 """
+load_dotenv()
 
 def call_ollama(prompt: str) -> str:
-    api_key = "AIzaSyAxy3LkOnpgZhzHiyCuoz_ZbpciPOTDJWk"
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY not found in .env file")
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     data = {
