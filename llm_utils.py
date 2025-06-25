@@ -21,22 +21,6 @@ def clean_llm_output(response: str) -> list:
         print("\n--- Cleaned JSON ---\n", cleaned)
         raise ValueError(f"LLM output is not valid JSON: {e}")
 
-def build_prompt(df: pd.DataFrame) -> str:
-    df = df.head(100)
-    csv_data = df.to_csv(index=False)
-    return f"""
-You are a system performance expert.
-
-Below is time series data from a system. Detect which metrics show drift/anomaly over time.
-
-Return output as a JSON list:
-[{{"metric": "cpu_temp", "drift_detected": true}}, ...]
-
-Only return JSON. No explanation.
-
-DATA:
-{csv_data}
-"""
 load_dotenv()
 
 def call_ollama(prompt: str) -> str:

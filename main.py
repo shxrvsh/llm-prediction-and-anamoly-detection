@@ -6,7 +6,7 @@ import os
 import re
 import json
 
-from llm_utils import build_prompt, call_ollama, clean_llm_output
+from llm_utils import call_ollama, clean_llm_output
 
 app = FastAPI()
 
@@ -98,6 +98,7 @@ DATA:
         return JSONResponse(content={"error": str(e)}, status_code=500)'''
 
 @app.get("/combined_forecast/{system_id}")
+@app.head("/combined_forecast/{system_id}")
 def combined_forecast(system_id: int):
     try:
         if system_id != 1:
@@ -177,6 +178,7 @@ Historical data:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @app.get("/detailed_drift/{system_id}")
+@app.head("/detailed_drift/{system_id}")
 def detailed_drift(system_id: int,
     start: str = Query(default=None),
     end: str = Query(default=None)
